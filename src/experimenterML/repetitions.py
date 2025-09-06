@@ -1,71 +1,106 @@
-from __future__ import annotations
-
-import csv
-import hashlib
-import json
+import os
 from dataclasses import dataclass
 from itertools import product
+import numpy as np
+import hashlib
+import json
+import pandas as pd
+from typing import Any, Callable, Dict
+import yaml
+import importlib
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List
 
-from .logging_utils import append_row, ensure_dir, write_json
+@dataclass
+class ExpConfig:
+    module: str
+    function: str
+    out_dir: str
+    params: Dict[str, Any]
+    evaluation_fn: Callable = None
 
+    @classmethod
+    def from_yaml(cls, path: str):
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        module = data.get("module")
+        function = data.get("function")
+        out_dir = data.get("out_dir", "results")
+        params = data.get("params", {})
+        if not module or not function:
+            raise ValueError("YAML must contain 'module' and 'function' fields.")
+        try:
+            mod = importlib.import_module(module)
+            evaluation_fn = getattr(mod, function)
+        except Exception as e:
+            raise ImportError(f"Could not import {function} from {module}: {e}")
+        return cls(module, function, out_dir, params, evaluation_fn)
 
-def _grid(param_grid: Dict[str, Iterable]) -> List[Dict]:
-    keys = sorted(param_grid.keys())
-    vals = [list(param_grid[k]) for k in keys]
-    return [dict(zip(keys, v)) for v in product(*vals)]
+    def print(self):
+        print(f"Experiment config:")
+        print(f"  module: {self.module}")
+        print(f"  function: {self.function}")
+        print(f"  out_dir: {self.out_dir}")
+        print(f"  params: {self.params}")
+        
 
-
-def short_uid(d: Dict, keys: List[str]) -> str:
-    """Compute 8-char uid from selected keys using sha256.
-
-    Args:
-        d: Parameter dict.
-        keys: Keys to include in the hash.
-
-    Returns:
-        8-character uid hex string.
-    """
-    picked = {k: d.get(k) for k in sorted(keys)}
-    payload = json.dumps(picked, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:8]
 
 
 @dataclass
 class Repetitions:
-    """Run combinatorial experiments with hashing and logging.
+    def __init__(self, config,path="results", name="results.csv"):
 
-    Attributes:
-        train_fn: Callable that receives (params, run_id) and returns metrics dict.
-        param_grid: Dict of lists for grid.
-        hash_keys: Keys to include in uid generation.
-        out_dir: Output directory for CSV/JSON results.
-        csv_name: File name for summary CSV.
-    """
 
-    train_fn: Callable[[Dict, str], Dict]
-    param_grid: Dict[str, Iterable]
-    hash_keys: List[str]
-    out_dir: str = "results"
-    csv_name: str = "experiments.csv"
+        self.path = path
+        self.name = name
+        os.makedirs(self.path, exist_ok=True)
+        self.results_path = os.path.join(self.path, self.name)
+        self.experiment_dicts = []
+        for conf in config:
+            
+            keys = list(conf.keys())
+            values = [v if isinstance(v, list) else [v] for v in conf.values()]
+            for combo in product(*values):
+                param_dict = dict(zip(keys, combo))
+                param_dict["uid"] = self.hash_experiment(param_dict)
+                self.experiment_dicts.append(param_dict)
 
-    def run_all(self, parallel: bool = False) -> None:
-        del parallel  # sequential by default for determinism
-        Path(self.out_dir).mkdir(parents=True, exist_ok=True)
-        csv_path = Path(self.out_dir) / self.csv_name
-        existing = set()
-        if csv_path.exists():
-            with open(csv_path, newline="", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    existing.add(row.get("uid", ""))
-        for params in _grid(self.param_grid):
-            uid = short_uid(params, self.hash_keys)
-            if uid in existing:
-                continue
-            metrics = self.train_fn(params, uid)
-            row = {**params, **metrics, "uid": uid}
-            append_row(csv_path, row)
-            write_json(Path(self.out_dir) / "json" / f"{uid}.json", {"params": params, "metrics": metrics})
+        self.realized = np.full(len(self.experiment_dicts), False)
+        self.current = None
+        self.currentExperiment = None
+        
+    def __len__(self):
+        return len(self.experiment_dicts)
 
+    def print(self, current=False):
+        if current:
+            experiments = [self.currentExperiment]
+        else:
+            experiments = self.experiment_dicts
+        if experiments:
+            for d in experiments:
+                for k, v in d.items():
+                    print(f"   {k}: {v}")
+                print("-" * 40)
+
+    def next(self):
+        for i, exp in enumerate(self.experiment_dicts):
+            if not self.realized[i]:
+                self.current = i
+                self.currentExperiment = exp
+                return exp
+        return None
+
+    def realize(self):
+        if self.current is not None:
+            self.realized[self.current] = True
+
+    def hash_experiment(self, exp_dict):
+        exp_str = json.dumps(exp_dict, sort_keys=True)
+        return hashlib.sha256(exp_str.encode()).hexdigest()[:8]  
+    def validate(self):
+        if os.path.exists(self.results_path):
+            df_results = pd.read_csv(self.results_path)
+            done_exps = set(df_results["uid"])
+        else:
+            df_results = pd.DataFrame()
+            done_exps = set()

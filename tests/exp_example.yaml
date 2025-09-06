@@ -1,0 +1,7 @@
+name: example_experiment
+module: example_module
+function: random_evaluation
+out_dir: results
+params:
+  models: ['resnet50']
+  size: [128, 256]

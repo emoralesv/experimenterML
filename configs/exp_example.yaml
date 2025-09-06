@@ -1,8 +1,0 @@
-module: tests.sample_exp
-function: train
-out_dir: results
-params:
-  lr: [0.001, 0.0001]
-  bs: [32, 64]
-  seed: [0, 1]
-
