@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
 from itertools import product
+from flask import config
 import numpy as np
 import hashlib
 import json
@@ -47,23 +48,20 @@ class ExpConfig:
 
 @dataclass
 class Repetitions:
-    def __init__(self, config,path="results", name="results.csv"):
-
-
-        self.path = path
-        self.name = name
-        os.makedirs(self.path, exist_ok=True)
-        self.results_path = os.path.join(self.path, self.name)
+    def __init__(self, path):
         self.experiment_dicts = []
-        for conf in config:
-            
-            keys = list(conf.keys())
-            values = [v if isinstance(v, list) else [v] for v in conf.values()]
-            for combo in product(*values):
-                param_dict = dict(zip(keys, combo))
-                param_dict["uid"] = self.hash_experiment(param_dict)
-                self.experiment_dicts.append(param_dict)
+        config = ExpConfig.from_yaml(path)
+        self.train_fn = config.evaluation_fn
+        conf = config.params  
+        # Build all combinations ONCE
+        keys = list(conf.keys())
+        values = [v if isinstance(v, list) else [v] for v in conf.values()]
+        for combo in product(*values):
+            param_dict = dict(zip(keys, combo))
+            param_dict["uid"] = self.hash_experiment(param_dict)
+            self.experiment_dicts.append(param_dict)
 
+        # After you finish the outer loop over all `conf` items (i.e., after building experiment_dicts):
         self.realized = np.full(len(self.experiment_dicts), False)
         self.current = None
         self.currentExperiment = None
