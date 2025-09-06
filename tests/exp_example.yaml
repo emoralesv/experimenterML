@@ -1,7 +1,11 @@
 name: example_experiment
-module: example_module
+module: tests.example_module
 function: random_evaluation
-out_dir: results
+out_csv: tests/results.csv
 params:
-  models: ['resnet50']
-  size: [128, 256]
+  models: ['resnet50','vgg16','inceptionv3']
+  size: [128, 256, 512]
+  learning_rate: [0.001, 0.01, 0.1]
+  epochs: [100, 200, 300]
+  batch_size: [16, 32, 64]
+  optimizer: ['adam', 'sgd']
