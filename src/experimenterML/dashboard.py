@@ -120,7 +120,7 @@ def render_dashboard(exp, config_path: Path | None, live_refresh: bool, refresh_
     # Pending preview
     st.subheader("Pending experiments (sample)")
     pending_df = df[df["status"] == "pending"][ ["uid", *param_keys] ]
-    st.dataframe(pending_df.head(20), use_container_width=True, height=200)
+    st.dataframe(pending_df.head(20), width=True, height=200)
 
     st.caption(f"CSV: {out_csv_path}")
 
@@ -142,6 +142,7 @@ def main(config:str):
     # CLI entry when executed as a module/script
     args = _parse_args()
     from experimenterML import Experiment as x
+    config =  getattr(args, "config", config)
     exp = x.Experimenter(config)
     # UI controls in the sidebar control live refresh when run via CLI
     st.sidebar.caption("Use the Run CLI separately. This dashboard reads the CSV and updates here.")

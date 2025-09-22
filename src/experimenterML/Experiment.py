@@ -47,8 +47,12 @@ class Experimenter:
         from . import dashboard as _dash
         here = os.path.dirname(os.path.abspath(__file__))
         app_path = os.path.join(here, "dashboard.py")
-        cmd = [sys.executable, "-m", "streamlit", "run", app_path,
-        "--server.headless", "true" if True else "false",]
+        cmd = [
+        sys.executable, "-m", "streamlit", "run", str(app_path),
+        "--server.headless", "true",
+        "--",
+        "--config", self.config_path
+        ]
         process = subprocess.Popen(cmd)
 
         
